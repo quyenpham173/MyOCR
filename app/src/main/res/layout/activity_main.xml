@@ -11,12 +11,29 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="com.example.myocr.MainActivity">
 
-    <TextView
-        android:layout_width="match_parent"
+    <LinearLayout
+        android:layout_width="fill_parent"
         android:layout_height="wrap_content"
-        android:id="@+id/txtView"
-        android:textAlignment="center"
-        android:text="Welcome"
-        android:textColor="#d7f708"
-        android:textSize="40dp"/>
+        android:background="@android:color/holo_green_dark"
+        android:orientation="vertical"
+        android:padding="10dip" >
+
+        <TextView
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dip"
+            android:text="@string/text_lb_select_language"
+            android:textColor="@color/colorAccent"
+            android:textSize="35sp"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/languageSpiner"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:entries="@array/language_array"
+            android:layout_marginBottom="20dp"
+            android:prompt="@string/test"/>
+
+    </LinearLayout>
 </RelativeLayout>

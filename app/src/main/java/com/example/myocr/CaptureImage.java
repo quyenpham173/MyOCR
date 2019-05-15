@@ -1,12 +1,23 @@
 package com.example.myocr;
 
 import android.Manifest;
+import android.annotation.TargetApi;
+import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.ImageFormat;
+import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -18,20 +29,28 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.ExifInterface;
 import android.media.Image;
 import android.media.ImageReader;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.provider.MediaStore;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
 import android.view.Surface;
 import android.view.TextureView;
+import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -53,11 +72,16 @@ import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
+
 public class CaptureImage extends AppCompatActivity {
+    private TextView textTessaractView;
+    public static boolean imageIsLoad=false;
+    public static String textOfImage=""; // this variable is for storing text of image temporary
     ImageView imageView;
+    private static String imageFullPath="";
     public static final String TESS_DATA = "/tessdata";
     private static final String TAG = "CaptureImage";
-    private static final String DATA_PATH = Environment.getExternalStorageDirectory().toString() + "/Tess";
+    private static final String DATA_PATH = Environment.getExternalStorageDirectory().toString() + "/Tess/";
     private TextView textView;
     private TessBaseAPI tessBaseAPI;
     private Uri outputFileDir;
@@ -66,8 +90,15 @@ public class CaptureImage extends AppCompatActivity {
     public static final String FOLDER_NAME = "Photo";
     public static final String FILE_NAME = "image_";
     public static final String ROOT_FOLDER = "Demo Camera2";
-
+    private final int PERMISSION_REQUEST_CODE=0;
+    private boolean isRecognized = false;
+    ProgressDialog progressBar;
+    static Bitmap mbitmap = null;
+    Image image;
+    public static String imagePathInGallery=""; // this path is used to display the image from gallery
+    private static final int selectImage=1;
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
+    Button button;
 
     static {
         ORIENTATIONS.append(Surface.ROTATION_0, 90);
@@ -192,71 +223,27 @@ public class CaptureImage extends AppCompatActivity {
 
     private static File imageFile;
 
-    /*public void prepareTessData(){
-        String[] paths = new String[] { DATA_PATH, DATA_PATH + "tessdata/" };
-        for (String path : paths) {
-            File dir = new File(path);
-            if (!dir.exists()) {
-                if (!dir.mkdirs()) {
-                    Log.d(TAG, "ERROR: Creation of directory " + path + " on sdcard failed");
-                    return;
-                } else {
-                    Log.d(TAG, "Created directory " + path + " on storage");
-                }
-            }
+    public Bitmap toGrayscale(Bitmap bmpOriginal)
+    {
+        int width, height;
+        height = bmpOriginal.getHeight();
+        width = bmpOriginal.getWidth();
 
-        }
-        if (!(new File(DATA_PATH + "tessdata/" + lang + ".traineddata")).exists()) {
-            try {
-                AssetManager assetManager = getAssets();
-                InputStream in = assetManager.open("tessdata/" + lang + ".traineddata");
-                //GZIPInputStream gin = new GZIPInputStream(in);
-                OutputStream out = new FileOutputStream(DATA_PATH
-                        + "tessdata/" + lang + ".traineddata");
-
-                // Transfer bytes from in to out
-                byte[] buf = new byte[1024];
-                int len;
-                while ((len = in.read(buf)) > 0) {
-                    out.write(buf, 0, len);
-                }
-                in.close();
-                out.close();
-
-                Log.d(TAG, "Copied " + lang + " traineddata");
-            } catch (IOException e) {
-                Log.d(TAG, "Was unable to copy " + lang + " traineddata " + e.toString());
-            }
-        }
-    }*/
-
-    public String getText(Bitmap bitmap){
-        try{
-            tessBaseAPI = new TessBaseAPI();
-        }catch (Exception e){
-            Log.e(TAG, e.getMessage());
-        }
-        //String dataPath = getExternalFilesDir("/").getPath() + "/";
-        tessBaseAPI.init(DATA_PATH, "eng");
-        tessBaseAPI.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, "abcdefghijklmnopqrstuvwxyz1234567890',.?;/ ");
-        tessBaseAPI.setDebug(true);
-        tessBaseAPI.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO_OSD);
-        tessBaseAPI.setImage(bitmap);
-        String retStr = "No result";
-        try{
-            retStr = tessBaseAPI.getUTF8Text();
-        }catch (Exception e){
-            Log.e(TAG, e.getMessage());
-        }
-        tessBaseAPI.end();
-        return retStr;
+        Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmpGrayscale);
+        Paint paint = new Paint();
+        ColorMatrix cm = new ColorMatrix();
+        cm.setSaturation(0);
+        ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
+        paint.setColorFilter(f);
+        c.drawBitmap(bmpOriginal, 0, 0, paint);
+        return bmpGrayscale;
     }
 
     public class ImageSave implements Runnable {
-        //private TessBaseAPI tessBaseAPI;
-        //private ImageToText imageToText = new ImageToText();
-        private Image image;
         private final ImageReader imageReader;
+        //OCRManager ocrManager = new OCRManager();
+        ImageToText imageToText = new ImageToText(CaptureImage.this, textView);
 
 /*        public Image getImage() {
             return image;
@@ -275,22 +262,26 @@ public class CaptureImage extends AppCompatActivity {
             //InputStream input=new ByteArrayInputStream(bytes);
             byteBuffer.get(bytes);
             //int x = 0, y = 0;
-            Bitmap mbitmap = BitmapFactory.decodeByteArray(bytes,0,bytes.length);
+            mbitmap = BitmapFactory.decodeByteArray(bytes,0,bytes.length);
+            Bitmap mybitmap = toGrayscale(mbitmap);
+            //ocrManager.prepareTessData(CaptureImage.this);
+            //String result = ocrManager.getText(mybitmap);
+            imageToText.prepareTessData();
+            final String result = imageToText.doInBackground(mybitmap);
+            //final String result = imageToText.process(mybitmap);
+            System.out.println("result: " + result);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    textView.setText(result);
+                }
+            });
             //Bitmap mbitmap = Bitmap.createBitmap(imageView.getWidth(),imageView.getHeight(),Bitmap.Config.ARGB_8888);
             //   Mat mymat = new Mat();
             //   Utils.bitmapToMat(mbitmap, mymat);
             // imageView.setImageBitmap(mbitmap);
             //   int test = getvalue(mymat.nativeObj);
             //   Log.d(TAG, "result: " + test);
-         //   prepareTessData();
-            final String result = getText(mbitmap);
-            runOnUiThread(new Runnable() {
-
-                @Override
-                public void run() {
-                    textView.setText(result);
-                }
-            });
             FileOutputStream fileOutputStream = null;
             try {
                 fileOutputStream = new FileOutputStream(imageFile);
@@ -306,54 +297,133 @@ public class CaptureImage extends AppCompatActivity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        try {
+            if (requestCode == selectImage && data != null) {
+                System.out.println("Hello");
+                Uri selectedImage = data.getData();
+                String[] filePathColumn = {MediaStore.Images.Media.DATA};
+
+                // Get the cursor
+                Cursor cursor = getContentResolver().query(selectedImage,
+                        filePathColumn, null, null, null);
+                // Move to first row
+                cursor.moveToFirst();
+
+                int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+                imageFullPath = cursor.getString(columnIndex);
+                System.out.println("image ...." + imageFullPath);
+                cursor.close();
+                imagePathInGallery = imageFullPath; // give the image path to display image that hoose by user
+
+                new LoadImage(imageFullPath).execute();
+            }
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+
+    }
+
+    public class LoadImage extends AsyncTask<String,Boolean,Void> {
+
+        private String imageUrl="";
+        ProgressDialog progressDialog;
+
+        public LoadImage(String imageFullPath){
+            this.imageUrl=imageFullPath;
+
+        }
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            progressDialog=new ProgressDialog(CaptureImage.this);
+            progressDialog.setMessage("Please wait..");
+            progressDialog.setIndeterminate(false);
+            progressDialog.setCancelable(false);
+            progressDialog.setProgress(0);
+            progressDialog.show();
+        }
+        @Override
+        protected Void doInBackground(String... params) {
+            //imageUrl=params[0];
+            /* Bitmap bitmap=BitmapFactory.decodeFile(imageFullPath);*/
+            //  progressDialog.dismiss();
+            performOcr(imageFullPath);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            progressDialog.dismiss();
+        }
+        private void performOcr(String imagePath){
+
+            Bitmap bitmap=BitmapFactory.decodeFile(imageFullPath);
+
+            try {
+                ExifInterface exif = new ExifInterface(imagePath);
+                int exifOrientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+
+                Log.v("Image :", "Orient: " + exifOrientation);
+
+                int rotate = 0;
+                switch (exifOrientation) {
+                    case ExifInterface.ORIENTATION_ROTATE_90:
+                        rotate = 90;
+                        break;
+                    case ExifInterface.ORIENTATION_ROTATE_180:
+                        rotate = 180;
+                        break;
+                    case ExifInterface.ORIENTATION_ROTATE_270:
+                        rotate = 270;
+                        break;
+                }
+
+                Log.v("Pic Rotate:", "Rotation: " + rotate);
+
+                if (rotate != 0) {
+
+                    // Getting width & height of the given image.
+                    int w = bitmap.getWidth();
+                    int h = bitmap.getHeight();
+
+                    // Setting pre rotate
+                    Matrix mtx = new Matrix();
+                    mtx.preRotate(rotate);
+
+                    // Rotating Bitmap
+                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, w, h, mtx, false);
+                    // tesseract req. ARGB_8888
+                    bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            TessBaseAPI tessBaseAPI = new TessBaseAPI();
+            tessBaseAPI.setDebug(true);
+            tessBaseAPI.init(DATA_PATH, "eng");
+            tessBaseAPI.setImage(bitmap);
+            String text = tessBaseAPI.getUTF8Text();
+            Log.d("data :", "Got data: " + text);
+            tessBaseAPI.end();
+            textOfImage=text;
+            imageIsLoad=true;
+        }
+
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_capture_image);
         textureView = findViewById(R.id.texture);
         textView = findViewById(R.id.textView);
-        String[] paths = new String[] { DATA_PATH, DATA_PATH + "tessdata/" };
-
-        for (String path : paths) {
-            File dir = new File(path);
-            if (!dir.exists()) {
-                if (!dir.mkdirs()) {
-                    Log.d(TAG, "ERROR: Creation of directory " + path + " on sdcard failed");
-                    return;
-                } else {
-                    Log.d(TAG, "Created directory " + path + " on sdcard");
-                }
-            }
-
-        }
-
-        // lang.traineddata file with the app (in assets folder)
-        // You can get them at:
-        // http://code.google.com/p/tesseract-ocr/downloads/list
-        // This area needs work and optimization
-        if (!(new File(DATA_PATH + "tessdata/" + lang + ".traineddata")).exists()) {
-            try {
-                AssetManager assetManager = getAssets();
-                InputStream in = assetManager.open("tessdata/" + lang + ".traineddata");
-                //GZIPInputStream gin = new GZIPInputStream(in);
-                OutputStream out = new FileOutputStream(DATA_PATH
-                        + "tessdata/" + lang + ".traineddata");
-
-                // Transfer bytes from in to out
-                byte[] buf = new byte[1024];
-                int len;
-                //while ((lenf = gin.read(buff)) > 0) {
-                while ((len = in.read(buf)) > 0) {
-                    out.write(buf, 0, len);
-                }
-                in.close();
-                //gin.close();
-                out.close();
-
-                Log.d(TAG, "Copied " + lang + " traineddata");
-            } catch (IOException e) {
-                Log.d(TAG, "Was unable to copy " + lang + " traineddata " + e.toString());
-            }
-        }
+        button = findViewById(R.id.button);
     }
 
     @Override
@@ -469,8 +539,14 @@ public class CaptureImage extends AppCompatActivity {
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                takePhotoImage();
+            }
+        });
 
-        mHandlerTakePicture = new Handler();
+/*        mHandlerTakePicture = new Handler();
         mTimer = new Timer();
         mTimerTask = new TimerTask() {
             @Override
@@ -483,7 +559,7 @@ public class CaptureImage extends AppCompatActivity {
                 });
             }
         };
-        mTimer.schedule(mTimerTask, 2000, 5000);
+        mTimer.schedule(mTimerTask, 3000, 500000);*/
     }
 
     private void closeCamera() {
@@ -622,9 +698,6 @@ public class CaptureImage extends AppCompatActivity {
                 File.separator + ROOT_FOLDER +
                 File.separator + FOLDER_NAME;
         File dir = new File(dirPath);
-        if (!dir.exists())
-            dir.mkdirs();
-
         String fileName = FILE_NAME + System.currentTimeMillis() + ".jpg";
         return new File(dir, fileName);
     }
